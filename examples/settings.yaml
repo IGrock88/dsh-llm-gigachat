@@ -1,0 +1,23 @@
+# dsh-llm-gigachat — example settings for ~/.dsh/settings.yaml
+#
+# The plugin ships sane defaults; this section is only needed when you want
+# to override them. Changes take effect on the next request (hot reload).
+
+gigachat:
+  enabled: true
+  host: 127.0.0.1
+  port: 8787
+  upstreamBaseURL: https://api.giga.chat/v1
+  # oauthURL: https://ngw.devices.sberbank.ru:9443/api/v2/oauth
+  scope: GIGACHAT_API_PERS          # GIGACHAT_API_B2B or GIGACHAT_API_CORP for orgs
+  apiKeyEnv: SBER_API_KEY
+  providerId: sber
+  displayName: Sber GigaChat
+  maxConcurrency: 1
+  tls:
+    rejectUnauthorized: false       # NCC/НУЦ certs; set true after installing the root CA
+  models:
+    - id: GigaChat-3-Ultra
+      name: GigaChat 3 Ultra
+    - id: GigaChat-3-Pro
+      name: GigaChat 3 Pro

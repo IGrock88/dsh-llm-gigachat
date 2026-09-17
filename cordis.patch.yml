@@ -1,0 +1,11 @@
+# dsh-llm-gigachat bundle patch (mount-only).
+#
+# SAFETY: this patch only INSERTS this plugin's own row into the profile's
+# layer stack. It never patches any other entry's config — the harness patch
+# engine replaces a targeted entry's config wholesale (no deep merge), so
+# touching e.g. `llm-pi-ai` here would wipe every other provider. All
+# configuration lives in this plugin's own `gigachat:` settings namespace;
+# the provider route is bootstrapped at runtime via settings.mutate path ops.
+- insert:
+    - id: llm-gigachat
+      name: dsh-llm-gigachat
