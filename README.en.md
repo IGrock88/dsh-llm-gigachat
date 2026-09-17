@@ -100,17 +100,38 @@ printf 'client_id:client_secret' | base64
 
 > Example of the resulting string: `MTIzNDU2Nzg5MDEyMzQ1Njc4OjE2OjE3OjE` (yours will differ).
 
-### Step 2. Put the key into the harness
+### Step 2. Connect the provider and put the key in
 
-The easiest and "standard" way — through the GUI:
+Two scenarios — pick yours.
+
+#### Option A. The plugin is installed (recommended)
+
+The **Sber GigaChat** row already exists on the **Settings → Models** page — the plugin creates it with the endpoint `http://127.0.0.1:8787/v1`, the `openai-completions` protocol, and the model list pre-filled. Only the key is missing:
 
 1. Run `dsh web`.
 2. Open **Settings → Models**.
-3. Find the **Sber GigaChat** row (registered by the plugin; endpoint `http://127.0.0.1:8787/v1`, protocol, and the model list are already filled in).
-4. Click the row and paste the key from step 1 into the **API key** field (the `base64(client_id:client_secret)` value).
-5. Click **Apply** (or save).
+3. Click **Edit** on the **Sber GigaChat** row.
+4. Paste the key from step 1 (the `base64(client_id:client_secret)` value) into the **API key** field.
+5. Click **Apply**.
 
-What happens inside: the key is stored **only** in the managed store `~/.dsh/.credentials.yaml` (as `SBER_API_KEY`), and the provider profile gets a reference `apiKeyEnv: SBER_API_KEY` — the value itself never lands in `settings.yaml`.
+> ⚠️ Trying to create another provider with the id `sber` through "Add a custom provider" will be refused ("id already taken") — and that is correct: the provider is already connected by the plugin. Just use the existing row.
+
+#### Option B. Without the plugin (external `gigachat-proxy.mjs` + standard UI)
+
+If the plugin is not installed but the external proxy is running (port 8787), connect through the standard card:
+
+1. **Settings → Models** → **+ Add a custom provider**.
+2. **Provider ID**: `sber`
+3. **Display name**: `Sber GigaChat` (or anything).
+4. **Base URL**: `http://127.0.0.1:8787/v1` — the local proxy, **not** `https://api.giga.chat/v1/` (going direct is impossible: pi-ai does not perform the OAuth2 exchange for hand-declared routes — you would get `401`).
+5. **API protocol**: `openai-completions`.
+6. **API key**: the key from step 1.
+7. **Models**: click **Fetch available models** — the proxy returns the list (`GigaChat-3-Ultra`, `GigaChat-3-Pro`); or **Add model** and enter an id manually (at least one model — the card will not save without it).
+8. **Create provider**.
+
+Keep `gigachat-proxy.mjs` running — without it the endpoint is dead.
+
+In both options, what happens inside: the key is stored **only** in the managed store `~/.dsh/.credentials.yaml` (as `SBER_API_KEY`), and the provider profile gets a reference `apiKeyEnv: SBER_API_KEY` — the value itself never lands in `settings.yaml`.
 
 Equivalent alternative without the GUI:
 
