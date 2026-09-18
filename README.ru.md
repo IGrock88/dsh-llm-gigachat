@@ -49,11 +49,13 @@ cd $env:USERPROFILE\.dsh\profiles\web
 pnpm add dsh-llm-gigachat
 ```
 
-### Вариант Б. Из GitHub-репозитория
+### Вариант Б. Из GitHub-репозитория (исходники, последний master)
 
 ```powershell
-dsh plugin --profile web add git+https://github.com/<ваш-аккаунт>/dsh-llm-gigachat.git
+dsh plugin --profile web add git+https://github.com/igrock88/dsh-llm-gigachat.git
 ```
+
+Как это работает: pnpm (вызывается форвардером `dsh plugin`) клонирует репозиторий, собирает пакет из исходников и устанавливает его в `node_modules` профиля — удобно, когда нужен самый свежий `master`.
 
 Затем добавьте плагин в список бандлов профиля `~/.dsh/profiles/web/package.json` → `dsh.profile.bundles`:
 

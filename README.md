@@ -49,11 +49,13 @@ cd $env:USERPROFILE\.dsh\profiles\web
 pnpm add dsh-llm-gigachat
 ```
 
-### Option B. From a GitHub repository
+### Option B. From the GitHub repository (source, latest master)
 
 ```powershell
-dsh plugin --profile web add git+https://github.com/<your-account>/dsh-llm-gigachat.git
+dsh plugin --profile web add git+https://github.com/igrock88/dsh-llm-gigachat.git
 ```
+
+What happens under the hood: pnpm (invoked by the `dsh plugin` forwarder) clones the repository, builds the package from its sources, and installs it into the profile's `node_modules` — useful when you want the latest state of `master`.
 
 Then add the plugin to the profile's bundle list in `~/.dsh/profiles/web/package.json` → `dsh.profile.bundles`:
 
