@@ -227,7 +227,7 @@ gigachat:
 | `displayName` | `Sber GigaChat` | подпись в селекторах |
 | `maxConcurrency` | `1` | одновременных upstream-запросов (личный тариф ~1) |
 | `tls.rejectUnauthorized` | `false` | проверять TLS (нужен корневой сертификат НУЦ) |
-| `models` | Ultra + Pro | каталог для `/v1/models` и роута |
+| `models` | 6 chat-моделей GigaChat 2/3 | каталог по умолчанию; `GET /v1/models` при этом отдаёт **живой список от Sber** (только chat-модели, embedders отфильтрованы), а при недоступности API — этот настроенный список |
 
 Особенности поведения:
 

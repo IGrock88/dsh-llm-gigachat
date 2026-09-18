@@ -227,7 +227,7 @@ gigachat:
 | `displayName` | `Sber GigaChat` | label shown by selector surfaces |
 | `maxConcurrency` | `1` | concurrent upstream requests (personal plan ~1) |
 | `tls.rejectUnauthorized` | `false` | verify TLS (needs the Russian NCC root CA installed) |
-| `models` | Ultra + Pro | catalog for `/v1/models` and the route |
+| `models` | 6 GigaChat 2/3 chat models | default catalog; `GET /v1/models` returns the **live list from Sber** (chat models only, embedders filtered out) and falls back to this configured list when the API is unreachable |
 
 Behaviour notes:
 
