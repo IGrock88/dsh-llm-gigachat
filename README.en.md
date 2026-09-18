@@ -295,6 +295,7 @@ The `SBER_API_KEY` record in `~/.dsh/.credentials.yaml` is harmless; delete it i
 | The model "answers" with a single `<` | Degenerate GigaChat reply under concurrent load — the plugin retries transparently; watch `degenerateRetries` in `/stats` |
 | Tool calling does not work / "no access to tools" | Expected for GigaChat 3: it only understands legacy `functions`. The proxy translates automatically; check `toolCallsTranslated` in `/stats` |
 | `500`/`422` on function results | GigaChat validates function content as JSON; the plugin wraps non-JSON text itself — if it still happens, confirm the translation reached the API (`/stats`) |
+| Chat error like `422 status code (no body)` | Usually the session history contains tool-calling turns GigaChat cannot re-validate in its legacy format → start a **new session** for this model. The proxy now returns an actionable error body (OpenAI-shaped `{"error":{...}}`) instead of an empty one |
 | dsh does not start after install | [Emergency rollback](#emergency-rollback-dsh-does-not-start); check the profile manifest and foreign `config:` patches |
 
 ---
