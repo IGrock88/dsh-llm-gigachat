@@ -227,9 +227,13 @@ gigachat:
 | `displayName` | `Sber GigaChat` | label shown by selector surfaces |
 | `maxConcurrency` | `1` | concurrent upstream requests (personal plan ~1) |
 | `tls.rejectUnauthorized` | `false` | verify TLS (needs the Russian NCC root CA installed) |
+| `stripToolsFor` | `[]` | model ids whose requests run **without tools** — for weaker models that reject complex agent schemas (422) or hallucinate tool calls |
 | `models` | 6 GigaChat 2/3 chat models | default catalog; `GET /v1/models` returns the **live list from Sber** (chat models only, embedders filtered out) and falls back to this configured list when the API is unreachable |
 
 Behaviour notes:
+
+- **Tool-schema sanitization**: the proxy recursively injects `properties: {}` into every object node of function schemas — the lighter models (Lightning, GigaChat-2*) otherwise answer `422: Field 'properties.args.properties' is missing`. Ultra/Pro tolerated it anyway; after sanitization all models accept the schemas.
+- **Model recommendations**: for agentic chats (with tools) use `GigaChat-3-Ultra` / `GigaChat-3-Pro` — the lighter models follow schemas poorly and may call tools at random; enable `stripToolsFor` for them (the model then answers in text, without tools).
 
 - If the `sber` route already exists in `llm-pi-ai.providers` (e.g. from the old standalone-proxy setup), the plugin does **not** overwrite it; the only exception is that `baseURL` is redirected to the local proxy when it currently points at `127.0.0.1` on another port.
 - If the port is busy and answers with a model list, an external proxy is assumed and no second server is started.
