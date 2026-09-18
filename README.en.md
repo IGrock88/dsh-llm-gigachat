@@ -4,6 +4,8 @@ A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`) pl
 
 Without this plugin you cannot connect GigaChat by pure configuration: Sber uses **OAuth 2.0 Client Credentials** (a two-step exchange of a key for a token), which the built-in OpenAI-compatible gateways of the harness do not implement — code is required. This plugin contains that code (the same logic proven in `gigachat-proxy.mjs`): key→token exchange, 30-minute token caching, request serialization (personal plans allow ≈1 concurrent request, otherwise HTTP 429), transparent retry of degenerate `"<"` answers, and tool-calling translation into the legacy `functions`/`function_call` format GigaChat 3 understands.
 
+> **⚠️ Models matter:** only **`GigaChat-3-Ultra` and `GigaChat-3-Pro`** reliably handle agentic chat with tools. The lighter models (`GigaChat-3-Lightning`, `GigaChat-2*`) reject complex agent schemas (`422: Field 'properties.args.properties' is missing` — the proxy fixes that with schema sanitization) or **hallucinate tool calls** with invalid arguments — that is an unfixable limit of the model itself. That is why the plugin runs the lighter models **without tools** by default (text mode via `stripToolsFor`), while Ultra/Pro get the full agentic mode. To hand tools to a weaker model, remove it from `stripToolsFor`.
+
 > Русская версия: [README.md](README.md) (Russian)
 
 ---
@@ -227,13 +229,13 @@ gigachat:
 | `displayName` | `Sber GigaChat` | label shown by selector surfaces |
 | `maxConcurrency` | `1` | concurrent upstream requests (personal plan ~1) |
 | `tls.rejectUnauthorized` | `false` | verify TLS (needs the Russian NCC root CA installed) |
-| `stripToolsFor` | `[]` | model ids whose requests run **without tools** — for weaker models that reject complex agent schemas (422) or hallucinate tool calls |
+| `stripToolsFor` | `GigaChat-3-Lightning`, `GigaChat-2-Max`, `GigaChat-2-Pro`, `GigaChat-2` | these models answer **without tools** by default (text mode): they reject complex agent schemas or hallucinate calls. Remove a model from the list to grant it tools; an empty list = tools for everyone |
 | `models` | 6 GigaChat 2/3 chat models | default catalog; `GET /v1/models` returns the **live list from Sber** (chat models only, embedders filtered out) and falls back to this configured list when the API is unreachable |
 
 Behaviour notes:
 
 - **Tool-schema sanitization**: the proxy recursively injects `properties: {}` into every object node of function schemas — the lighter models (Lightning, GigaChat-2*) otherwise answer `422: Field 'properties.args.properties' is missing`. Ultra/Pro tolerated it anyway; after sanitization all models accept the schemas.
-- **Model recommendations**: for agentic chats (with tools) use `GigaChat-3-Ultra` / `GigaChat-3-Pro` — the lighter models follow schemas poorly and may call tools at random; enable `stripToolsFor` for them (the model then answers in text, without tools).
+- **Model recommendations**: for agentic chats (with tools) use `GigaChat-3-Ultra` / `GigaChat-3-Pro` — the lighter models follow schemas poorly and may call tools at random; `stripToolsFor` is therefore enabled for them by default (text mode). If a listed model does need tools, remove it from `stripToolsFor` in the `gigachat:` section.
 
 - If the `sber` route already exists in `llm-pi-ai.providers` (e.g. from the old standalone-proxy setup), the plugin does **not** overwrite it; the only exception is that `baseURL` is redirected to the local proxy when it currently points at `127.0.0.1` on another port.
 - If the port is busy and answers with a model list, an external proxy is assumed and no second server is started.

@@ -16,8 +16,24 @@ gigachat:
   maxConcurrency: 1
   tls:
     rejectUnauthorized: false       # NCC/НУЦ certs; set true after installing the root CA
-  models:
+  # Weaker models run WITHOUT tools by default (they reject complex agent
+  # schemas or hallucinate tool calls). To give tools to one of them, remove
+  # it from the list. Empty list = tools for every model.
+  # stripToolsFor:
+  #   - GigaChat-3-Lightning
+  #   - GigaChat-2-Max
+  #   - GigaChat-2-Pro
+  #   - GigaChat-2
+  models:                           # default catalog (GET /v1/models serves the live Sber list)
     - id: GigaChat-3-Ultra
       name: GigaChat 3 Ultra
     - id: GigaChat-3-Pro
       name: GigaChat 3 Pro
+    - id: GigaChat-3-Lightning
+      name: GigaChat 3 Lightning
+    - id: GigaChat-2-Max
+      name: GigaChat 2 Max
+    - id: GigaChat-2-Pro
+      name: GigaChat 2 Pro
+    - id: GigaChat-2
+      name: GigaChat 2
