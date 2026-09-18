@@ -14,6 +14,7 @@
     "cordis.patch.yml",
     "examples",
     "README.md",
+    "README.ru.md",
     "LICENSE"
   ],
   "keywords": [
@@ -26,6 +27,15 @@
     "llm",
     "plugin"
   ],
+  "author": "Igor Korobeynikov",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/igrock88/dsh-llm-gigachat.git"
+  },
+  "homepage": "https://github.com/igrock88/dsh-llm-gigachat#readme",
+  "bugs": {
+    "url": "https://github.com/igrock88/dsh-llm-gigachat/issues"
+  },
   "dependencies": {
     "@deepseek-ai/schemastery": "^3.18.2",
     "@deepseek-ai/dsh-credentials": "^0.1.2-rc.1"
@@ -34,6 +44,9 @@
     "bundle": {
       "patch": "./cordis.patch.yml"
     }
+  },
+  "engines": {
+    "node": ">=18"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",

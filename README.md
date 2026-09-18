@@ -1,141 +1,167 @@
 # dsh-llm-gigachat
 
-English version: [README.en.md](README.en.md)
+A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`) plugin that connects **Sber GigaChat** models to the harness the "proper" way: a built-in OAuth2 proxy plus automatic provider setup, so the provider shows up on the standard **Settings → Models** page and is selectable from the regular model picker.
 
-Плагин [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`), который подключает **модели Сбера GigaChat** к harness «по-нормальному»: встроенный OAuth2-прокси + автоматическая настройка провайдера, который появляется на стандартной странице **Settings → Models** и выбирается обычным пикером моделей.
+Without this plugin you cannot connect GigaChat by pure configuration: Sber uses **OAuth 2.0 Client Credentials** (a two-step exchange of a key for a token), which the built-in OpenAI-compatible gateways of the harness do not implement — code is required. This plugin contains that code (the same logic proven in `gigachat-proxy.mjs`): key→token exchange, 30-minute token caching, request serialization (personal plans allow ≈1 concurrent request, otherwise HTTP 429), transparent retry of degenerate `"<"` answers, and tool-calling translation into the legacy `functions`/`function_call` format GigaChat 3 understands.
 
-Без плагина GigaChat подключить «простой настройкой» нельзя: Sber использует **OAuth 2.0 Client Credentials** (двухшаговый обмен ключа на токен), а встроенные OpenAI-совместимые шлюзы harness такого не умеют — нужен код. Этот плагин содержит этот код (тот самый, что проверен в `gigachat-proxy.mjs`): обмен ключа на токен, кэш токена на 30 минут, сериализация запросов (личный тариф ≈ 1 одновременный запрос, иначе 429), прозрачный ретрай вырожденных ответов `"<"` и трансляция tool-calling в устаревший формат `functions`/`function_call`, который понимает GigaChat 3.
+> **⚠️ Models matter:** only **`GigaChat-3-Ultra` and `GigaChat-3-Pro`** reliably handle agentic chat with tools. The lighter models (`GigaChat-3-Lightning`, `GigaChat-2*`) reject complex agent schemas (`422: Field 'properties.args.properties' is missing` — the proxy fixes that with schema sanitization) or **hallucinate tool calls** with invalid arguments — that is an unfixable limit of the model itself. That is why the plugin runs the lighter models **without tools** by default (text mode via `stripToolsFor`), while Ultra/Pro get the full agentic mode. To hand tools to a weaker model, remove it from `stripToolsFor`.
 
-> **⚠️ Важно про модели:** агентский чат с инструментами надёжно тянут только **`GigaChat-3-Ultra` и `GigaChat-3-Pro`**. Младшие модели (`GigaChat-3-Lightning`, `GigaChat-2*`) отвергают сложные агентские схемы (`422: Field 'properties.args.properties' is missing` — прокси это чинит санитизацией) или **галлюцинируют вызовы инструментов** с невалидными аргументами — это уже нефиксируемый предел самой модели. Поэтому плагин по умолчанию пускает младшие модели **без инструментов** (текстовый режим, `stripToolsFor`), а Ultra/Pro — в полном агентском режиме. Хотите дать инструментам слабой модели — уберите её из `stripToolsFor`.
+> Русская версия: [README.ru.md](README.ru.md) (Russian)
 
 ---
 
-## Содержание
+## Table of contents
 
-1. [Инструкция установки](#установка)
-2. [Как добавить провайдера Sber и какой ключ куда вставлять](#как-подключить-провайдера-sber-gigachat-пошагово)
-3. [OAuth2: что происходит под капотом](#oauth2-коротко)
-4. [Конфигурация](#конфигурация)
-5. [Откат / удаление плагина](#откат--удаление-плагина)
+1. [Install](#install)
+2. [How to add the Sber provider and where to put the key](#how-to-connect-the-sber-gigachat-provider-step-by-step)
+3. [OAuth2 under the hood](#oauth2-in-short)
+4. [Configuration](#configuration)
+5. [Rollback / uninstall](#rollback--uninstall)
 6. [Troubleshooting](#troubleshooting)
 
 ---
 
-## Установка
+## Install
 
-### Вариант А. Из GitHub-репозитория
+### Option A. From npm (recommended)
 
 ```powershell
-dsh plugin --profile web add git+https://github.com/<ваш-аккаунт>/dsh-llm-gigachat.git
+dsh plugin --profile web add dsh-llm-gigachat
 ```
 
-Затем добавьте плагин в список бандлов профиля `~/.dsh/profiles/web/package.json` → `dsh.profile.bundles`:
+This installs the npm package into the web profile. Then add the plugin to the profile's bundle list in `~/.dsh/profiles/web/package.json` → `dsh.profile.bundles`:
 
 ```jsonc
 "dsh": {
   "profile": {
     "bundles": [
-      // ... существующие ...
+      // ... existing ...
       "dsh-llm-gigachat"
     ]
   }
 }
 ```
 
-Перезапустите `dsh web`.
+Restart `dsh web`. Manual equivalent of the first step:
 
-### Вариант Б. Локальная разработка (file:)
+```powershell
+cd $env:USERPROFILE\.dsh\profiles\web
+pnpm add dsh-llm-gigachat
+```
+
+### Option B. From a GitHub repository
+
+```powershell
+dsh plugin --profile web add git+https://github.com/<your-account>/dsh-llm-gigachat.git
+```
+
+Then add the plugin to the profile's bundle list in `~/.dsh/profiles/web/package.json` → `dsh.profile.bundles`:
+
+```jsonc
+"dsh": {
+  "profile": {
+    "bundles": [
+      // ... existing ...
+      "dsh-llm-gigachat"
+    ]
+  }
+}
+```
+
+Restart `dsh web`.
+
+### Option C. Local development (file:)
 
 ```powershell
 $profile = "$env:USERPROFILE\.dsh\profiles\web"
-# 1. скопировать исходники
+# 1. copy the sources
 Copy-Item -Recurse -Force ".\dsh-llm-gigachat" "$profile\plugins\dsh-llm-gigachat"
 
-# 2. в package.json профиля добавить зависимость:
+# 2. in the profile's package.json add the dependency:
 #      "dsh-llm-gigachat": "file:./plugins/dsh-llm-gigachat"
-#    и "dsh-llm-gigachat" в dsh.profile.bundles
+#    and "dsh-llm-gigachat" to dsh.profile.bundles
 
-# 3. установить зависимости и перезапустить
+# 3. install dependencies and restart
 Push-Location $profile
 pnpm install
 Pop-Location
-# перезапустить dsh web
+# restart dsh web
 ```
 
-### Проверка БЕЗ запуска сервера (обязательно, безопасно)
+### Verify WITHOUT starting the server (mandatory, safe)
 
-Команда `--dump-config` **не стартует dsh** — только печатает собранное дерево конфигурации. В выводе должна появиться строка `id: llm-gigachat`, а конфиг `llm-pi-ai` должен остаться **нетронутым**:
+`--dump-config` does **not** start dsh — it only prints the composed configuration tree. The output must contain a row `id: llm-gigachat`, and the `llm-pi-ai` config must stay **untouched**:
 
 ```powershell
 dsh --profile web --dump-config
 ```
 
-> ⚠️ После установки dsh должен «взлететь» сразу. Если нет — см. раздел [Откат](#откат--удаление-плагина).
+> ⚠️ After installation dsh must boot right away. If it does not — see [Rollback](#rollback--uninstall).
 
 ---
 
-## Как подключить провайдера Sber GigaChat (пошагово)
+## How to connect the Sber GigaChat provider (step by step)
 
-### Шаг 1. Получите ключ OAuth2 в кабинете Sber
+### Step 1. Get the OAuth2 key from your Sber account
 
-1. Зайдите в кабинет разработчика: **developers.sber.ru → GigaChat API** (или Sber Studio → раздел GigaChat).
-2. Создайте приложение / подключите API. Кабинет выдаст **два значения**:
-   - `client_id` и `client_secret`;
-   - либо сразу готовый **«Ключ авторизации» / Authorization Key** — это и есть та строка, что нам нужна.
-3. Уточните тип доступа, он задаёт `scope`:
-   - физлицо → `GIGACHAT_API_PERS` (по умолчанию в плагине);
-   - организация → `GIGACHAT_API_B2B` или `GIGACHAT_API_CORP`.
+1. Open the developer dashboard: **developers.sber.ru → GigaChat API** (or Sber Studio → GigaChat section).
+2. Create an app / enable the API. The dashboard gives you **two things**:
+   - `client_id` and `client_secret`;
+   - or a ready-made **Authorization Key** — that is exactly the string we need.
+3. Know your access type, it defines `scope`:
+   - individual → `GIGACHAT_API_PERS` (the plugin's default);
+   - organization → `GIGACHAT_API_B2B` or `GIGACHAT_API_CORP`.
 
-**Ключ авторизации** — это не сам ключ API, а строка `base64(client_id:client_secret)` (два поля, склеенные двоеточием и закодированные в base64). Если кабинет даёт только раздельные `client_id`/`client_secret`, соберите её сами:
+**The authorization key is not an API key** — it is `base64(client_id:client_secret)` (both fields joined with a colon and base64-encoded). If the dashboard gives you separate `client_id`/`client_secret`, build it yourself:
 
 ```powershell
-# PowerShell: base64("client_id:client_secret") — пример сборки
+# PowerShell: base64("client_id:client_secret")
 $pair = "client_id:client_secret"
 [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($pair))
-Write-Host "Вставьте полученную строку как API key"
+Write-Host "Paste this string as the API key"
 ```
 
 ```bash
-# или в bash:
+# or bash:
 printf 'client_id:client_secret' | base64
 ```
 
-> Пример вида строки: `MTIzNDU2Nzg5MDEyMzQ1Njc4OjE2OjE3OjE` (у вас будет своя).
+> Example of the resulting string: `MTIzNDU2Nzg5MDEyMzQ1Njc4OjE2OjE3OjE` (yours will differ).
 
-### Шаг 2. Подключите провайдера и вставьте ключ
+### Step 2. Connect the provider and put the key in
 
-Два сценария — выберите свой.
+Two scenarios — pick yours.
 
-#### Вариант A. Плагин установлен (рекомендуется)
+#### Option A. The plugin is installed (recommended)
 
-Строка **Sber GigaChat** уже есть на странице **Settings → Models** — её создаёт плагин, и в ней уже заполнены endpoint `http://127.0.0.1:8787/v1`, протокол `openai-completions` и список моделей. Остаётся только ключ:
+The **Sber GigaChat** row already exists on the **Settings → Models** page — the plugin creates it with the endpoint `http://127.0.0.1:8787/v1`, the `openai-completions` protocol, and the model list pre-filled. Only the key is missing:
 
-1. Запустите `dsh web`.
-2. Откройте **Settings → Models**.
-3. Нажмите **Edit** на строке **Sber GigaChat**.
-4. В поле **API key** вставьте ключ из шага 1 (значение `base64(client_id:client_secret)`).
-5. Нажмите **Apply**.
+1. Run `dsh web`.
+2. Open **Settings → Models**.
+3. Click **Edit** on the **Sber GigaChat** row.
+4. Paste the key from step 1 (the `base64(client_id:client_secret)` value) into the **API key** field.
+5. Click **Apply**.
 
-> ⚠️ Попытка создать через «Add a custom provider» ещё одного провайдера с id `sber` будет отклонена («идентификатор уже занят») — и это правильно: провайдер уже подключён плагином. Просто используйте существующую строку.
+> ⚠️ Trying to create another provider with the id `sber` through "Add a custom provider" will be refused ("id already taken") — and that is correct: the provider is already connected by the plugin. Just use the existing row.
 
-#### Вариант B. Без плагина (внешний `gigachat-proxy.mjs` + стандартный интерфейс)
+#### Option B. Without the plugin (external `gigachat-proxy.mjs` + standard UI)
 
-Если плагин не установлен, но внешний прокси запущен (порт 8787), подключите провайдера через стандартную карточку:
+If the plugin is not installed but the external proxy is running (port 8787), connect through the standard card:
 
 1. **Settings → Models** → **+ Add a custom provider**.
 2. **Provider ID**: `sber`
-3. **Display name**: `Sber GigaChat` (или любое).
-4. **Base URL**: `http://127.0.0.1:8787/v1` — именно локальный прокси, **не** `https://api.giga.chat/v1/` (напрямую нельзя: pi-ai не делает OAuth2-обмен для hand-declared роутов — будет `401`).
+3. **Display name**: `Sber GigaChat` (or anything).
+4. **Base URL**: `http://127.0.0.1:8787/v1` — the local proxy, **not** `https://api.giga.chat/v1/` (going direct is impossible: pi-ai does not perform the OAuth2 exchange for hand-declared routes — you would get `401`).
 5. **API protocol**: `openai-completions`.
-6. **API key**: ключ из шага 1.
-7. **Models**: нажмите **Fetch available models** — прокси отдаст список (`GigaChat-3-Ultra`, `GigaChat-3-Pro`); либо **Add model** и введите id вручную (хотя бы одну модель — без неё карточка не сохранится).
+6. **API key**: the key from step 1.
+7. **Models**: click **Fetch available models** — the proxy returns the list (`GigaChat-3-Ultra`, `GigaChat-3-Pro`); or **Add model** and enter an id manually (at least one model — the card will not save without it).
 8. **Create provider**.
 
-При этом держите `gigachat-proxy.mjs` запущенным — без него endpoint мёртв.
+Keep `gigachat-proxy.mjs` running — without it the endpoint is dead.
 
-Что произойдёт внутри в обоих вариантах: ключ сохранится **только** в управляемом хранилище `~/.dsh/.credentials.yaml` (под именем `SBER_API_KEY`), а в настройки провайдера запишется ссылка `apiKeyEnv: SBER_API_KEY` — само значение в `settings.yaml` не попадёт.
+In both options, what happens inside: the key is stored **only** in the managed store `~/.dsh/.credentials.yaml` (as `SBER_API_KEY`), and the provider profile gets a reference `apiKeyEnv: SBER_API_KEY` — the value itself never lands in `settings.yaml`.
 
-Альтернатива без GUI (эквивалент):
+Equivalent alternative without the GUI:
 
 ```yaml
 # ~/.dsh/.credentials.yaml
@@ -143,19 +169,19 @@ refs:
   SBER_API_KEY: "<base64(client_id:client_secret)>"
 ```
 
-или переменная окружения перед запуском dsh:
+or an environment variable before starting dsh:
 
 ```powershell
 set SBER_API_KEY=<base64(client_id:client_secret)>
 dsh web
 ```
 
-### Шаг 3. Выберите модель и проверьте
+### Step 3. Select the model and verify
 
-1. В пикере модели (шапка чата) или в **Settings → Models** выберите: провайдер **sber**, модель `GigaChat-3-Ultra` (или `GigaChat-3-Pro`).
-2. Отправьте сообщение. Должен прийти ответ модели.
+1. In the model picker (chat header) or in **Settings → Models**, select provider **sber** and model `GigaChat-3-Ultra` (or `GigaChat-3-Pro`).
+2. Send a message; the model should reply.
 
-Проверка «живости» прокси (плагин поднимает его на `127.0.0.1:8787`) и счётчики:
+Proxy liveness and counters (the plugin serves it on `127.0.0.1:8787`):
 
 ```powershell
 Invoke-WebRequest -Uri "http://127.0.0.1:8787/v1/models" -UseBasicParsing
@@ -163,48 +189,48 @@ Invoke-WebRequest -Uri "http://127.0.0.1:8787/stats" -UseBasicParsing
 # stats: { served, rateLimited, serverErrors, degenerateRetries, toolCallsTranslated, queueDepth }
 ```
 
-> Если на порту 8787 уже запущен внешний `gigachat-proxy.mjs` — плагин обнаружит его (`/v1/models` отвечает) и **не будет** поднимать второй сервер, а просто переиспользует существующий. Остановите внешний скрипт, чтобы прокси жил внутри harness.
+> If an external `gigachat-proxy.mjs` already runs on port 8787, the plugin detects it (`/v1/models` answers) and does **not** start a second server — it reuses the existing one. Stop the external script to keep the proxy inside the harness.
 
 ---
 
-## OAuth2: коротко
+## OAuth2 in short
 
-GigaChat не принимает статический ключ напрямую. Каждый запрос выглядит так:
+GigaChat does not accept a static key directly. Every request looks like this:
 
 ```
 1) POST https://ngw.devices.sberbank.ru:9443/api/v2/oauth
-   Authorization: Basic <base64(client_id:client_secret)>   ← ваш ключ из шага 1
-   RqUID: <uuid4>                                            ← свежий на каждый запрос
+   Authorization: Basic <base64(client_id:client_secret)>   ← your key from step 1
+   RqUID: <uuid4>                                            ← fresh per request
    body: scope=GIGACHAT_API_PERS
-   → { access_token, expires_in: 1800 }                      ← живёт 30 минут
+   → { access_token, expires_in: 1800 }                      ← lives 30 minutes
 
 2) POST https://api.giga.chat/v1/chat/completions
    Authorization: Bearer <access_token>
-   body: стандартный OpenAI JSON (stream / tools / …)
+   body: standard OpenAI JSON (stream / tools / …)
 ```
 
-Плагин делает оба шага автоматически: достаёт ваш ключ из `SBER_API_KEY`, при первом запросе получает токен, кэширует его до истечения (минус запас), при `401` обновляет токен на лету. Плюс к этому:
+The plugin does both steps automatically: it reads your key via `SBER_API_KEY`, obtains a token on the first request, caches it until expiry (minus a safety margin), and refreshes it on the fly on `401`. Additionally:
 
-- **Сериализация запросов** к api.giga.chat — личный тариф допускает ≈1 одновременный запрос, иначе `429` (отсюда был «шквал 429» при параллельных запросах раньше). Очередь FIFO, `maxConcurrency` по умолчанию 1.
-- **Защита от `"<"`** — вырожденный ответ ровно в один символ `<` прозрачно повторяется до 2 раз.
-- **Tool calling** — GigaChat 3 игнорирует современный `tools`/`tool_choice`, но понимает легаси `functions`/`function_call` (аргументы — объектом). Прокси транслирует запрос и ответ в обе стороны, а результат функции (не-JSON текст) оборачивает в JSON-строку (иначе 422/500).
-- **TLS** — сертификаты НУЦ Минцифры не лежат в системном хранилище Node по умолчанию, поэтому проверка отключена (`tls.rejectUnauthorized: false`). Для усиления: установите корневой сертификат НУЦ и включите проверку.
+- **Request serialization** to api.giga.chat — personal plans allow ≈1 concurrent request, otherwise `429` (that is where the earlier "429 storm" during parallel requests came from). FIFO queue, `maxConcurrency` defaults to 1.
+- **`"<"` guard** — a degenerate answer of exactly the character `<` is transparently retried up to 2 times.
+- **Tool calling** — GigaChat 3 ignores modern `tools`/`tool_choice` but understands legacy `functions`/`function_call` (arguments as an OBJECT). The proxy translates the request and the response both ways and wraps a non-JSON function result into a JSON string (otherwise 422/500).
+- **TLS** — the Russian NCC (НУЦ Минцифры) certificates are not in Node's default trust store on Windows, so verification is off (`tls.rejectUnauthorized: false`). For hardening, install the NCC root certificate and enable verification.
 
 ---
 
-## Конфигурация
+## Configuration
 
-Все настройки — секция `gigachat:` в `~/.dsh/settings.yaml` (хот-релоад, без перезапуска):
+All settings live in the `gigachat:` section of `~/.dsh/settings.yaml` (hot-reload, no restart):
 
 ```yaml
 gigachat:
   enabled: true
   host: 127.0.0.1
-  port: 8787                # порт прокси; на него указывает роут sber
+  port: 8787                # proxy port; the sber route points here
   upstreamBaseURL: https://api.giga.chat/v1
   oauthURL: https://ngw.devices.sberbank.ru:9443/api/v2/oauth
-  scope: GIGACHAT_API_PERS  # GIGACHAT_API_B2B / GIGACHAT_API_CORP для организаций
-  apiKeyEnv: SBER_API_KEY   # ссылка на креденшал (ключ base64)
+  scope: GIGACHAT_API_PERS  # GIGACHAT_API_B2B / GIGACHAT_API_CORP for organizations
+  apiKeyEnv: SBER_API_KEY   # credential reference (the base64 key)
   providerId: sber
   displayName: Sber GigaChat
   maxConcurrency: 1
@@ -217,95 +243,95 @@ gigachat:
       name: GigaChat 3 Pro
 ```
 
-| Поле | По умолчанию | Смысл |
+| Field | Default | Meaning |
 |---|---|---|
-| `enabled` | `true` | поднимать встроенный прокси |
-| `host` / `port` | `127.0.0.1` / `8787` | адрес прокси; на него должен указывать роут |
-| `upstreamBaseURL` | `https://api.giga.chat/v1` | базовый URL chat-completions |
-| `oauthURL` | `https://ngw.devices.sberbank.ru:9443/api/v2/oauth` | первый эндпоинт токена (легаси) |
-| `scope` | `GIGACHAT_API_PERS` | тип доступа (физлицо / организация) |
-| `apiKeyEnv` | `SBER_API_KEY` | имя ссылки на креденшал |
-| `providerId` | `sber` | id роута `llm-pi-ai.providers.*` и строки на странице Models |
-| `displayName` | `Sber GigaChat` | подпись в селекторах |
-| `maxConcurrency` | `1` | одновременных upstream-запросов (личный тариф ~1) |
-| `tls.rejectUnauthorized` | `false` | проверять TLS (нужен корневой сертификат НУЦ) |
-| `stripToolsFor` | `GigaChat-3-Lightning`, `GigaChat-2-Max`, `GigaChat-2-Pro`, `GigaChat-2` | эти модели по умолчанию отвечают **без инструментов** (текстовый режим): они отвергают сложные агентские схемы или галлюцинируют вызовы. Уберите модель из списка, чтобы дать ей инструменты; пустой список = инструменты у всех |
-| `models` | 6 chat-моделей GigaChat 2/3 | каталог по умолчанию; `GET /v1/models` при этом отдаёт **живой список от Sber** (только chat-модели, embedders отфильтрованы), а при недоступности API — этот настроенный список |
+| `enabled` | `true` | start the built-in proxy |
+| `host` / `port` | `127.0.0.1` / `8787` | proxy listen address; the sber route points here |
+| `upstreamBaseURL` | `https://api.giga.chat/v1` | GigaChat chat-completions base |
+| `oauthURL` | `https://ngw.devices.sberbank.ru:9443/api/v2/oauth` | first token endpoint (legacy) |
+| `scope` | `GIGACHAT_API_PERS` | access type (individual / organization) |
+| `apiKeyEnv` | `SBER_API_KEY` | credential reference resolved through the dsh credentials seam |
+| `providerId` | `sber` | the `llm-pi-ai.providers.*` route id and the Models page row |
+| `displayName` | `Sber GigaChat` | label shown by selector surfaces |
+| `maxConcurrency` | `1` | concurrent upstream requests (personal plan ~1) |
+| `tls.rejectUnauthorized` | `false` | verify TLS (needs the Russian NCC root CA installed) |
+| `stripToolsFor` | `GigaChat-3-Lightning`, `GigaChat-2-Max`, `GigaChat-2-Pro`, `GigaChat-2` | these models answer **without tools** by default (text mode): they reject complex agent schemas or hallucinate calls. Remove a model from the list to grant it tools; an empty list = tools for everyone |
+| `models` | 6 GigaChat 2/3 chat models | default catalog; `GET /v1/models` returns the **live list from Sber** (chat models only, embedders filtered out) and falls back to this configured list when the API is unreachable |
 
-Особенности поведения:
+Behaviour notes:
 
-- **Санитизация схем инструментов**: прокси рекурсивно дополняет `properties: {}` всем объектам в схемах функций — младшие модели (Lightning, GigaChat-2*) иначе отвечают `422: Field 'properties.args.properties' is missing`. Ultra/Pro терпеливы, но после санитизации работают все.
-- **Рекомендации по моделям**: для агентских чатов (с инструментами) используйте `GigaChat-3-Ultra` / `GigaChat-3-Pro` — младшие слабо следуют схемам и могут вызывать инструменты невпопад; поэтому по умолчанию для них включён `stripToolsFor` (текстовый режим). Если модели из списка всё же нужны инструменты — уберите её из `stripToolsFor` в секции `gigachat:`.
+- **Tool-schema sanitization**: the proxy recursively injects `properties: {}` into every object node of function schemas — the lighter models (Lightning, GigaChat-2*) otherwise answer `422: Field 'properties.args.properties' is missing`. Ultra/Pro tolerated it anyway; after sanitization all models accept the schemas.
+- **Model recommendations**: for agentic chats (with tools) use `GigaChat-3-Ultra` / `GigaChat-3-Pro` — the lighter models follow schemas poorly and may call tools at random; `stripToolsFor` is therefore enabled for them by default (text mode). If a listed model does need tools, remove it from `stripToolsFor` in the `gigachat:` section.
 
-- Если роут `sber` в `llm-pi-ai.providers` уже существует (например, от старого standalone-прокси), плагин его **не перезаписывает**; единственное исключение — база `baseURL` перенаправляется на локальный прокси, если сейчас она указывает на `127.0.0.1` с другого порта.
-- Если порт занят и отвечает списком моделей — считаем, что работает внешний прокси, второй сервер не поднимаем.
-- Роут создаётся через `settings.mutate` **path-операциями** — конфиг остальных провайдеров (`openrouter`, `local`, …) никогда не затрагивается.
+- If the `sber` route already exists in `llm-pi-ai.providers` (e.g. from the old standalone-proxy setup), the plugin does **not** overwrite it; the only exception is that `baseURL` is redirected to the local proxy when it currently points at `127.0.0.1` on another port.
+- If the port is busy and answers with a model list, an external proxy is assumed and no second server is started.
+- The route is created via `settings.mutate` **path operations** — the config of other providers (`openrouter`, `local`, …) is never touched.
 
 ---
 
-## Откат / удаление плагина
+## Rollback / uninstall
 
-> **Главное правило:** dsh перестаёт запускаться после установки плагина почти всегда из-за поломки манифеста `package.json` профиля или чужих `config:`-патчей, а не из-за harness. Наш плагин **никогда не патчит чужие строки**, поэтому откат тривиален.
+> **Golden rule:** after installing a plugin, dsh almost always fails to boot because of a broken profile `package.json` or third-party `config:` patches — not because of the harness. This plugin **never patches other entries**, so rollback is trivial.
 
-### Штатное удаление (dsh работает)
+### Normal uninstall (dsh runs fine)
 
 ```powershell
 cd $env:USERPROFILE\.dsh\profiles\web
 pnpm remove dsh-llm-gigachat
 ```
 
-или, если ставили через CLI:
+or, when installed via the CLI forwarder:
 
 ```powershell
 dsh plugin --profile web remove dsh-llm-gigachat
 ```
 
-Затем удалите `"dsh-llm-gigachat"` из `dsh.profile.bundles` в `package.json` профиля и перезапустите `dsh web`.
+Then remove `"dsh-llm-gigachat"` from `dsh.profile.bundles` in the profile's `package.json` and restart `dsh web`.
 
-### Аварийный откат (dsh НЕ запускается)
+### Emergency rollback (dsh does NOT start)
 
-1. Любым редактором откройте `~/.dsh/profiles/web/package.json`:
-   - удалите строку `"dsh-llm-gigachat": ...` из `dependencies`;
-   - удалите `"dsh-llm-gigachat"` из `dsh.profile.bundles`.
-2. Если вы вручную добавляли insert в `~/.dsh/profiles/web/cordis.patch.yml` — удалите блок `id: llm-gigachat`.
-3. Переустановите зависимости и проверьте дерево **без запуска dsh**:
+1. Open `~/.dsh/profiles/web/package.json` with any editor:
+   - delete the `"dsh-llm-gigachat": ...` line from `dependencies`;
+   - delete `"dsh-llm-gigachat"` from `dsh.profile.bundles`.
+2. If you manually added an insert to `~/.dsh/profiles/web/cordis.patch.yml` — remove the `id: llm-gigachat` block.
+3. Reinstall dependencies and verify the tree **without starting dsh**:
 
 ```powershell
 cd $env:USERPROFILE\.dsh\profiles\web
 pnpm install
-dsh --profile web --dump-config   # в выводе не должно быть llm-gigachat
+dsh --profile web --dump-config   # must NOT contain llm-gigachat anymore
 ```
 
-4. Запустите dsh снова. Если профиль всё ещё не грузится даже без плагина — ищите в `cordis.patch.yml` строки вида `- id: <чужой> config:` (движок патчей **заменяет** конфиг целиком, не мержит — это и ломает конфиги вроде `llm-pi-ai`).
+4. Start dsh again. If the profile still refuses to boot even without the plugin, look for rows like `- id: <foreign> config:` in `cordis.patch.yml` (the patch engine **replaces** the target config wholesale, it does not merge — that is what breaks configs such as `llm-pi-ai`).
 
-### Очистка данных плагина (опционально)
+### Cleanup of plugin-owned data (optional)
 
 ```yaml
-# ~/.dsh/settings.yaml — удалить, если плагин больше не нужен
-gigachat:               # удалить
-# llm-pi-ai.providers.sber удалять ТОЛЬКО если роут создан этим плагином
-# (у более ранних установок роут sber мог быть и вручную — тогда оставьте)
+# ~/.dsh/settings.yaml — delete if the plugin is no longer needed
+gigachat:               # delete
+# llm-pi-ai.providers.sber delete ONLY if the route was created by this plugin
+# (earlier setups may have added the sber route manually — keep it then)
 ```
 
-Запись `SBER_API_KEY` в `~/.dsh/.credentials.yaml` безвредна; удалите её, если ничто другое её не использует.
+The `SBER_API_KEY` record in `~/.dsh/.credentials.yaml` is harmless; delete it if nothing else uses it.
 
 ---
 
 ## Troubleshooting
 
-| Симптом | Причина / решение |
+| Symptom | Cause / fix |
 |---|---|
-| `502 {"error": "...no GigaChat credentials..."}` | Вставьте ключ на странице Models (или задайте `SBER_API_KEY` в `.credentials.yaml`/окружении) — см. шаг 1–2 выше |
-| `401` при запросах | Токен протух между кэшем и запросом — плагин обновляет сам и повторяет; если повторяется постоянно — проверьте, что ключ действительно `base64(client_id:client_secret)` от того же приложения и с нужным `scope` |
-| Шквал `429` | Личный тариф ≈1 одновременный запрос. Убедитесь, что включена сериализация (`maxConcurrency: 1`) и что нет второго внешнего прокси, конкурирующего с плагином |
-| Модель «отвечает» одним символом `<` | Вырожденный ответ GigaChat под конкурентной нагрузкой — плагин повторяет прозрачно; счётчик `degenerateRetries` в `/stats` |
-| Tool-calling не работает / «нет доступа к инструментам» | Ожидаемо для GigaChat 3: он понимает только легаси `functions`. Прокси транслирует сам; проверьте `toolCallsTranslated` в `/stats` |
-| `500`/`422` на результатах функций | GigaChat валидирует содержимое функции как JSON; не-JSON текст плагин оборачивает сам — если приходит всё равно, проверьте, что до API дошла трансляция (`/stats`) |
-| Ошибка в чате вида `422 status code (no body)` | Обычно это история сессии с tool-ходами, которые GigaChat не может перевалидировать в легаси-формате → начните **новую сессию** для этой модели. Прокси теперь возвращает понятное тело ошибки (OpenAI-формат `{"error":{...}}`) вместо пустого |
-| dsh не запускается после установки | [Аварийный откат](#аварийный-откат-dsh-не-запускается); проверьте манифест профиля и чужие `config:`-патчи |
+| `502 {"error": "...no GigaChat credentials..."}` | Put the key into the Models page (or set `SBER_API_KEY` in `.credentials.yaml`/the environment) — see steps 1–2 above |
+| Constant `401` on requests | Token expired between cache and request — the plugin refreshes and retries itself; if it persists, check that the key is really `base64(client_id:client_secret)` from the same app and uses the right `scope` |
+| A barrage of `429` | Personal plans ≈1 concurrent request. Make sure serialization is on (`maxConcurrency: 1`) and no second external proxy competes with the plugin |
+| The model "answers" with a single `<` | Degenerate GigaChat reply under concurrent load — the plugin retries transparently; watch `degenerateRetries` in `/stats` |
+| Tool calling does not work / "no access to tools" | Expected for GigaChat 3: it only understands legacy `functions`. The proxy translates automatically; check `toolCallsTranslated` in `/stats` |
+| `500`/`422` on function results | GigaChat validates function content as JSON; the plugin wraps non-JSON text itself — if it still happens, confirm the translation reached the API (`/stats`) |
+| Chat error like `422 status code (no body)` | Usually the session history contains tool-calling turns GigaChat cannot re-validate in its legacy format → start a **new session** for this model. The proxy now returns an actionable error body (OpenAI-shaped `{"error":{...}}`) instead of an empty one |
+| dsh does not start after install | [Emergency rollback](#emergency-rollback-dsh-does-not-start); check the profile manifest and foreign `config:` patches |
 
 ---
 
-## Лицензия
+## License
 
 MIT
