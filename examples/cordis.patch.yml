@@ -1,0 +1,41 @@
+# Example override for ~/.dsh/profiles/<profile>/cordis.patch.yml.
+# The plugin's defaults are enough for Settings → Models. Add this entry only
+# to change them. A targeted config replaces the llm-gigachat entry's config;
+# fields you omit keep the schema defaults. apiKeyEnv is the credential
+# reference name (SBER_API_KEY), never the key. The key belongs in
+# ~/.dsh/.credentials.yaml under refs.SBER_API_KEY, or in the Models page.
+- id: llm-gigachat
+  name: dsh-llm-gigachat
+  config:
+    enabled: true
+    host: 127.0.0.1
+    port: 8787
+    upstreamBaseURL: https://api.giga.chat/v1
+    scope: GIGACHAT_API_PERS          # GIGACHAT_API_B2B or GIGACHAT_API_CORP for orgs
+    apiKeyEnv: SBER_API_KEY
+    providerId: sber
+    displayName: Sber GigaChat
+    maxConcurrency: 1
+    tls:
+      rejectUnauthorized: false       # NCC/НУЦ certs; set true after installing the root CA
+    # Weaker models run WITHOUT tools by default (they reject complex agent
+    # schemas or hallucinate tool calls). To give tools to one of them, remove
+    # it from the list. Empty list = tools for every model.
+    # stripToolsFor:
+    #   - GigaChat-3-Lightning
+    #   - GigaChat-2-Max
+    #   - GigaChat-2-Pro
+    #   - GigaChat-2
+    models:                           # default catalog (GET /v1/models serves the live Sber list)
+      - id: GigaChat-3-Ultra
+        name: GigaChat 3 Ultra
+      - id: GigaChat-3-Pro
+        name: GigaChat 3 Pro
+      - id: GigaChat-3-Lightning
+        name: GigaChat 3 Lightning
+      - id: GigaChat-2-Max
+        name: GigaChat 2 Max
+      - id: GigaChat-2-Pro
+        name: GigaChat 2 Pro
+      - id: GigaChat-2
+        name: GigaChat 2
