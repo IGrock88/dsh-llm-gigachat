@@ -161,7 +161,7 @@ printf 'client_id:client_secret' | base64
 
 При этом держите `gigachat-proxy.mjs` запущенным — без него endpoint мёртв.
 
-Что произойдёт внутри в обоих вариантах: ключ сохранится **только** в управляемом хранилище `~/.dsh/.credentials.yaml` (под именем `SBER_API_KEY`), а в настройки провайдера запишется ссылка `apiKeyEnv: SBER_API_KEY` — само значение в `settings.yaml` не попадёт.
+Что произойдёт внутри в обоих вариантах: ключ сохранится **только** в управляемом хранилище `~/.dsh/.credentials.yaml` (под именем `SBER_API_KEY`), а в настройки провайдера запишется ссылка `apiKeyEnv: SBER_API_KEY`. `apiKeyEnv` — это имя ссылки, а не сам ключ. Значение ключа в `cordis.patch.yml` не попадает.
 
 Альтернатива без GUI (эквивалент):
 
@@ -222,27 +222,31 @@ GigaChat не принимает статический ключ напряму�
 
 ## Конфигурация
 
-Все настройки — секция `gigachat:` в `~/.dsh/settings.yaml` (хот-релоад, без перезапуска):
+Настройки плагина — это запись профиля `llm-gigachat`. Переопределения кладите в патч профиля `~/.dsh/profiles/<profile>/cordis.patch.yml` (для Web `<profile>` — это `web`). Целевой `config` заменяет конфиг этой записи целиком; пропущенные поля остаются значениями схемы по умолчанию. Профиль перечитывает запись, когда файл меняется.
+
+`~/.dsh/settings.yaml` не читается. Оставшаяся секция `gigachat:` не импортируется: импорт адресует записи по id, а id этой записи — `llm-gigachat`, не `gigachat`.
 
 ```yaml
-gigachat:
-  enabled: true
-  host: 127.0.0.1
-  port: 8787                # порт прокси; на него указывает роут sber
-  upstreamBaseURL: https://api.giga.chat/v1
-  oauthURL: https://ngw.devices.sberbank.ru:9443/api/v2/oauth
-  scope: GIGACHAT_API_PERS  # GIGACHAT_API_B2B / GIGACHAT_API_CORP для организаций
-  apiKeyEnv: SBER_API_KEY   # ссылка на креденшал (ключ base64)
-  providerId: sber
-  displayName: Sber GigaChat
-  maxConcurrency: 1
-  tls:
-    rejectUnauthorized: false
-  models:
-    - id: GigaChat-3-Ultra
-      name: GigaChat 3 Ultra
-    - id: GigaChat-3-Pro
-      name: GigaChat 3 Pro
+- id: llm-gigachat
+  name: dsh-llm-gigachat
+  config:
+    enabled: true
+    host: 127.0.0.1
+    port: 8787                # порт прокси; на него указывает роут sber
+    upstreamBaseURL: https://api.giga.chat/v1
+    oauthURL: https://ngw.devices.sberbank.ru:9443/api/v2/oauth
+    scope: GIGACHAT_API_PERS  # GIGACHAT_API_B2B / GIGACHAT_API_CORP для организаций
+    apiKeyEnv: SBER_API_KEY   # имя ссылки на креденшал, не сам ключ
+    providerId: sber
+    displayName: Sber GigaChat
+    maxConcurrency: 1
+    tls:
+      rejectUnauthorized: false
+    models:
+      - id: GigaChat-3-Ultra
+        name: GigaChat 3 Ultra
+      - id: GigaChat-3-Pro
+        name: GigaChat 3 Pro
 ```
 
 | Поле | По умолчанию | Смысл |
@@ -263,7 +267,7 @@ gigachat:
 Особенности поведения:
 
 - **Санитизация схем инструментов**: прокси рекурсивно дополняет `properties: {}` всем объектам в схемах функций — младшие модели (Lightning, GigaChat-2*) иначе отвечают `422: Field 'properties.args.properties' is missing`. Ultra/Pro терпеливы, но после санитизации работают все.
-- **Рекомендации по моделям**: для агентских чатов (с инструментами) используйте `GigaChat-3-Ultra` / `GigaChat-3-Pro` — младшие слабо следуют схемам и могут вызывать инструменты невпопад; поэтому по умолчанию для них включён `stripToolsFor` (текстовый режим). Если модели из списка всё же нужны инструменты — уберите её из `stripToolsFor` в секции `gigachat:`.
+- **Рекомендации по моделям**: для агентских чатов (с инструментами) используйте `GigaChat-3-Ultra` / `GigaChat-3-Pro` — младшие слабо следуют схемам и могут вызывать инструменты невпопад; поэтому по умолчанию для них включён `stripToolsFor` (текстовый режим). Если модели из списка всё же нужны инструменты — уберите её из `stripToolsFor` в конфиге `llm-gigachat`.
 
 - Если роут `sber` в `llm-pi-ai.providers` уже существует (например, от старого standalone-прокси), плагин его **не перезаписывает**; единственное исключение — база `baseURL` перенаправляется на локальный прокси, если сейчас она указывает на `127.0.0.1` с другого порта.
 - Если порт занят и отвечает списком моделей — считаем, что работает внешний прокси, второй сервер не поднимаем.
@@ -309,10 +313,10 @@ dsh --profile web --dump-config   # в выводе не должно быть l
 ### Очистка данных плагина (опционально)
 
 ```yaml
-# ~/.dsh/settings.yaml — удалить, если плагин больше не нужен
-gigachat:               # удалить
-# llm-pi-ai.providers.sber удалять ТОЛЬКО если роут создан этим плагином
-# (у более ранних установок роут sber мог быть и вручную — тогда оставьте)
+# ~/.dsh/profiles/<profile>/cordis.patch.yml
+# Удалите блок `- id: llm-gigachat`, если добавляли переопределение конфига.
+# В `- id: llm-pi-ai` удаляйте `providers.sber` ТОЛЬКО если этот роут создал
+# плагин. Роут sber, добавленный раньше вручную, оставьте.
 ```
 
 Запись `SBER_API_KEY` в `~/.dsh/.credentials.yaml` безвредна; удалите её, если ничто другое её не использует.

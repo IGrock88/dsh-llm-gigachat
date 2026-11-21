@@ -161,7 +161,7 @@ If the plugin is not installed but the external proxy is running (port 8787), co
 
 Keep `gigachat-proxy.mjs` running — without it the endpoint is dead.
 
-In both options, what happens inside: the key is stored **only** in the managed store `~/.dsh/.credentials.yaml` (as `SBER_API_KEY`), and the provider profile gets a reference `apiKeyEnv: SBER_API_KEY` — the value itself never lands in `settings.yaml`.
+In both options, what happens inside: the key is stored **only** in the managed store `~/.dsh/.credentials.yaml` (as `SBER_API_KEY`), and the provider profile gets a reference `apiKeyEnv: SBER_API_KEY`. `apiKeyEnv` is that reference name, never the key itself. The key never lands in `cordis.patch.yml`.
 
 Equivalent alternative without the GUI:
 
@@ -222,27 +222,31 @@ The plugin does both steps automatically: it reads your key via `SBER_API_KEY`, 
 
 ## Configuration
 
-All settings live in the `gigachat:` section of `~/.dsh/settings.yaml` (hot-reload, no restart):
+Plugin settings are the `llm-gigachat` profile entry. Put overrides in the profile patch, `~/.dsh/profiles/<profile>/cordis.patch.yml` (for Web, `<profile>` is `web`). A targeted `config` replaces that entry's config; omitted fields keep the schema defaults. The profile reloads the entry when the file changes.
+
+`~/.dsh/settings.yaml` is not read. A leftover `gigachat:` section is not imported: the importer addresses entries by id, and this entry's id is `llm-gigachat`, not `gigachat`.
 
 ```yaml
-gigachat:
-  enabled: true
-  host: 127.0.0.1
-  port: 8787                # proxy port; the sber route points here
-  upstreamBaseURL: https://api.giga.chat/v1
-  oauthURL: https://ngw.devices.sberbank.ru:9443/api/v2/oauth
-  scope: GIGACHAT_API_PERS  # GIGACHAT_API_B2B / GIGACHAT_API_CORP for organizations
-  apiKeyEnv: SBER_API_KEY   # credential reference (the base64 key)
-  providerId: sber
-  displayName: Sber GigaChat
-  maxConcurrency: 1
-  tls:
-    rejectUnauthorized: false
-  models:
-    - id: GigaChat-3-Ultra
-      name: GigaChat 3 Ultra
-    - id: GigaChat-3-Pro
-      name: GigaChat 3 Pro
+- id: llm-gigachat
+  name: dsh-llm-gigachat
+  config:
+    enabled: true
+    host: 127.0.0.1
+    port: 8787                # proxy port; the sber route points here
+    upstreamBaseURL: https://api.giga.chat/v1
+    oauthURL: https://ngw.devices.sberbank.ru:9443/api/v2/oauth
+    scope: GIGACHAT_API_PERS  # GIGACHAT_API_B2B / GIGACHAT_API_CORP for organizations
+    apiKeyEnv: SBER_API_KEY   # credential reference name, not the key
+    providerId: sber
+    displayName: Sber GigaChat
+    maxConcurrency: 1
+    tls:
+      rejectUnauthorized: false
+    models:
+      - id: GigaChat-3-Ultra
+        name: GigaChat 3 Ultra
+      - id: GigaChat-3-Pro
+        name: GigaChat 3 Pro
 ```
 
 | Field | Default | Meaning |
@@ -263,7 +267,7 @@ gigachat:
 Behaviour notes:
 
 - **Tool-schema sanitization**: the proxy recursively injects `properties: {}` into every object node of function schemas — the lighter models (Lightning, GigaChat-2*) otherwise answer `422: Field 'properties.args.properties' is missing`. Ultra/Pro tolerated it anyway; after sanitization all models accept the schemas.
-- **Model recommendations**: for agentic chats (with tools) use `GigaChat-3-Ultra` / `GigaChat-3-Pro` — the lighter models follow schemas poorly and may call tools at random; `stripToolsFor` is therefore enabled for them by default (text mode). If a listed model does need tools, remove it from `stripToolsFor` in the `gigachat:` section.
+- **Model recommendations**: for agentic chats (with tools) use `GigaChat-3-Ultra` / `GigaChat-3-Pro` — the lighter models follow schemas poorly and may call tools at random; `stripToolsFor` is therefore enabled for them by default (text mode). If a listed model does need tools, remove it from `stripToolsFor` in the `llm-gigachat` config.
 
 - If the `sber` route already exists in `llm-pi-ai.providers` (e.g. from the old standalone-proxy setup), the plugin does **not** overwrite it; the only exception is that `baseURL` is redirected to the local proxy when it currently points at `127.0.0.1` on another port.
 - If the port is busy and answers with a model list, an external proxy is assumed and no second server is started.
@@ -309,10 +313,10 @@ dsh --profile web --dump-config   # must NOT contain llm-gigachat anymore
 ### Cleanup of plugin-owned data (optional)
 
 ```yaml
-# ~/.dsh/settings.yaml — delete if the plugin is no longer needed
-gigachat:               # delete
-# llm-pi-ai.providers.sber delete ONLY if the route was created by this plugin
-# (earlier setups may have added the sber route manually — keep it then)
+# ~/.dsh/profiles/<profile>/cordis.patch.yml
+# Delete the `- id: llm-gigachat` block if you added config overrides.
+# Under `- id: llm-pi-ai`, delete `providers.sber` ONLY if this plugin created
+# that route. An earlier manual sber route should stay.
 ```
 
 The `SBER_API_KEY` record in `~/.dsh/.credentials.yaml` is harmless; delete it if nothing else uses it.
